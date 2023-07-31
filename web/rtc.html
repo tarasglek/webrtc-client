@@ -41,24 +41,19 @@ Chat: <input id="chat" /><br />
       let offer = JSON.parse(chat.value);
       chat.value = "";
       console.log(`setRemoteDescription(${JSON.stringify(offer)})`);
-      await pc.setRemoteDescription({
-        type: "offer",
-        sdp: offer,
-      });
+      await pc.setRemoteDescription(offer);
       await pc.setLocalDescription(await pc.createAnswer());
       console.log(`setLocalDescription`);
       pc.onicecandidate = ({ candidate }) => {
         if (candidate) return;
-        log(JSON.stringify(pc.localDescription.sdp));
+        const answer = pc.localDescription;
+        log(JSON.stringify(answer));
       };
       return;
     } else if (pc.connectionState == "connecting") {
       const answer = JSON.parse(chat.value);
       chat.value = "";
-      pc.setRemoteDescription({
-        type: "answer",
-        sdp: answer,
-      });
+      pc.setRemoteDescription(answer);
     }
     dc.send(chat.value);
     log(chat.value);
@@ -70,7 +65,7 @@ Chat: <input id="chat" /><br />
     await pc.setLocalDescription(await pc.createOffer());
     pc.onicecandidate = ({ candidate }) => {
       if (candidate) return;
-      log(JSON.stringify(pc.localDescription.sdp));
+      log(JSON.stringify(pc.localDescription));
     };
   }
 
