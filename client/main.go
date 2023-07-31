@@ -49,6 +49,17 @@ func runCommandAndPipeToDataChannel(dataChannel *webrtc.DataChannel, cmdString s
 
 	fmt.Println("starting command:", cmdString)
 	command.Start()
+
+	// below is not working for handling ctrl-c
+	// c := make(chan os.Signal, 1)
+	// signal.Notify(c, os.Interrupt)
+	// go func() {
+	// 	<-c
+	// 	fmt.Println("killing command:", cmdString)
+	// 	command.Process.Kill()
+	// 	os.Exit(1)
+	// }()
+
 	command.Wait()
 }
 
