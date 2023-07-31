@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/pion/webrtc/v3"
 )
@@ -48,42 +49,73 @@ func main() {
 		fmt.Println("ICE Connection State has changed:", connectionState.String())
 	})
 
-	// Create an offer
-	offer, err := peerConnection.CreateOffer(nil)
-	if err != nil {
-		panic(err)
-	}
+	// Handle ICE candidates
+	peerConnection.OnICECandidate(func(candidate *webrtc.ICECandidate) {
+		if candidate != nil {
+			candidateJSON, err := json.Marshal(candidate.ToJSON())
+			if err != nil {
+				panic(err)
+			}
+			fmt.Println("ICE Candidate:", string(candidateJSON))
+		}
+	})
 
-	// Set the local description
-	err = peerConnection.SetLocalDescription(offer)
-	if err != nil {
-		panic(err)
-	}
+	// Create a channel to signal when ICE gathering is complete
+	gatherComplete := webrtc.GatheringCompletePromise(peerConnection)
 
-	// Output the offer in SDP format
-	fmt.Println(offer.SDP)
-
-	answerStr := promptAndRead("Enter offer from web: ")
+	offerJSON := promptAndRead("Enter offer from web: ")
 
 	// Parse the answer
-	var answer webrtc.SessionDescription
-	json.Unmarshal([]byte(answerStr), &answer)
+	// var answerSDP string
+	// json.Unmarshal([]byte(answerStr), &answer)
 
+	// fmt.Println(offerJSON)
 	// Set the remote description
-	err = peerConnection.SetRemoteDescription(answer)
+	offer := webrtc.SessionDescription{}
+	json.Unmarshal([]byte(offerJSON), &offer)
+
+	err = peerConnection.SetRemoteDescription(offer)
 	if err != nil {
 		panic(err)
 	}
 
-	// Send a message
-	err = dataChannel.SendText("Hello, World!")
+	// Create an answer
+	answer, err := peerConnection.CreateAnswer(nil)
 	if err != nil {
 		panic(err)
 	}
 
-	// Close the peer connection
-	err = peerConnection.Close()
+	// Set the answer as the local description
+	err = peerConnection.SetLocalDescription(answer)
 	if err != nil {
 		panic(err)
+	}
+
+	// Wait for ICE gathering to complete
+	<-gatherComplete
+
+	// Print the answer.SDP as JSON
+	answerJSON, err := json.Marshal(answer)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("paste this answer in web:")
+	fmt.Println(string(answerJSON))
+
+	dataChannel.OnOpen(func() {
+		err := dataChannel.SendText("Hello, World!")
+		if err != nil {
+			panic(err)
+		}
+	})
+
+	// // Close the peer connection
+	// err = peerConnection.Close()
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// Infinite loop
+	for {
+		time.Sleep(time.Second)
 	}
 }
