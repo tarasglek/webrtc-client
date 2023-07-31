@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"time"
@@ -18,45 +19,36 @@ func printAsJSON(kind string, msg string) string {
 }
 
 func runCommandAndPipeToDataChannel(dataChannel *webrtc.DataChannel, cmdString string) {
-	// Create a new command
 	fmt.Println("running command", cmdString)
 	command := exec.Command("/bin/sh", "-c", cmdString)
 
-	// Get the input/output pipes
 	stdin, _ := command.StdinPipe()
 	stdout, _ := command.StdoutPipe()
 	stderr, _ := command.StderrPipe()
 
-	// Handle incoming DataChannel messages
 	dataChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
-		// Write the incoming message to the command's stdin
-		// convert data to string and print as json
 		msgStr := string(msg.Data)
 		msgJSON, _ := json.Marshal(msgStr)
 		fmt.Println("OnMessage", string(msgJSON))
 		stdin.Write(msg.Data)
 	})
 
-	// Read from the command's stdout and stderr and send the output over the DataChannel
-	go func() {
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			dataChannel.SendText(printAsJSON("stdout", scanner.Text()))
+	readAndSend := func(r io.Reader, prefix string) {
+		buf := make([]byte, 1024)
+		for {
+			n, err := r.Read(buf)
+			if err != nil {
+				break
+			}
+			dataChannel.SendText(printAsJSON(prefix, string(buf[:n])))
 		}
-	}()
+	}
 
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			dataChannel.SendText(printAsJSON("stderr", scanner.Text()))
-
-		}
-	}()
+	go readAndSend(stdout, "stdout")
+	go readAndSend(stderr, "stderr")
 
 	fmt.Println("starting command:", cmdString)
-	// Start the command
 	command.Start()
-	// Wait for the command to finish
 	command.Wait()
 }
 
