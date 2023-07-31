@@ -1,0 +1,102 @@
+Based on
+https://stackoverflow.com/questions/54980799/a-complete-example-for-a-webrtc-datachannel-with-manual-signaling
+<p id="stat"></p>
+<button id="button" onclick="createOffer()">Offer:</button>
+<br />
+Chat: <input id="chat" /><br />
+<div id="output">Chat:</div>
+<script>
+  const chat = document.getElementById("chat");
+  const output = document.getElementById("output");
+  const config = {
+    iceServers: [
+      {
+        urls: "stun:stun.1.google.com:19302",
+      },
+    ],
+  };
+  const pc = new RTCPeerConnection(config);
+  const dc = pc.createDataChannel("chat", {
+    negotiated: true,
+    id: 0,
+  });
+  // const log = msg => output.innerHTML += `<br>${msg}`;
+  // append textarea for every message
+  const log = (msg) => {
+    let textarea = document.createElement("textarea");
+    // make it full with and 3 rows
+    textarea.style = "width:100%;height:3em";
+    textarea.value = msg;
+    output.appendChild(textarea);
+    // output.appendChild(document.createElement('br'));
+  };
+  dc.onopen = () => chat.select();
+  dc.onmessage = (e) => log(`${e.data}`);
+  pc.oniceconnectionstatechange = (e) => log(pc.iceConnectionState);
+
+  chat.onkeypress = async function (e) {
+    if (e.keyCode != 13) return;
+    // if got message and state is new, means message is offer from other node
+    if (pc.connectionState == "new") {
+      let offer = JSON.parse(chat.value);
+      chat.value = "";
+      console.log(`setRemoteDescription(${JSON.stringify(offer)})`);
+      await pc.setRemoteDescription({
+        type: "offer",
+        sdp: offer,
+      });
+      await pc.setLocalDescription(await pc.createAnswer());
+      console.log(`setLocalDescription`);
+      pc.onicecandidate = ({ candidate }) => {
+        if (candidate) return;
+        log(JSON.stringify(pc.localDescription.sdp));
+      };
+      return;
+    } else if (pc.connectionState == "connecting") {
+      const answer = JSON.parse(chat.value);
+      chat.value = "";
+      pc.setRemoteDescription({
+        type: "answer",
+        sdp: answer,
+      });
+    }
+    dc.send(chat.value);
+    log(chat.value);
+    chat.value = "";
+  };
+
+  async function createOffer() {
+    button.disabled = true;
+    await pc.setLocalDescription(await pc.createOffer());
+    pc.onicecandidate = ({ candidate }) => {
+      if (candidate) return;
+      log(JSON.stringify(pc.localDescription.sdp));
+    };
+  }
+
+  pc.onconnectionstatechange = (ev) => handleChange();
+  pc.oniceconnectionstatechange = (ev) => handleChange();
+
+  function handleChange() {
+    let stat =
+      "ConnectionState: <strong>" +
+      pc.connectionState +
+      "</strong> IceConnectionState: <strong>" +
+      pc.iceConnectionState +
+      "</strong>";
+    document.getElementById("stat").innerHTML = stat;
+    let msg =
+      "%c" +
+      new Date().toISOString() +
+      ": ConnectionState: %c" +
+      pc.connectionState +
+      " %cIceConnectionState: %c" +
+      pc.iceConnectionState;
+    let colors = ["color:yellow", "color:orange", "color:yellow", "color:orange"];
+    // add signalingState
+    msg += " %csignalingState: %c" + pc.signalingState;
+    colors.push("color:yellow", "color:orange");
+    console.log(msg, ...colors);
+  }
+  handleChange();
+</script>
