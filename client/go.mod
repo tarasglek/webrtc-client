@@ -1,3 +1,3 @@
-module tarasglek/webrtc-client
+module github.com/tarasglek/webrtc-client
 
 go 1.20
