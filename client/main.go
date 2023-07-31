@@ -9,6 +9,13 @@ import (
 	"github.com/pion/webrtc/v3"
 )
 
+func promptAndRead(prompt string) string {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print(prompt)
+	response, _ := reader.ReadString('\n')
+	return response
+}
+
 func main() {
 	// Prepare the configuration
 	config := webrtc.Configuration{
@@ -56,10 +63,7 @@ func main() {
 	// Output the offer in SDP format
 	fmt.Println(offer.SDP)
 
-	// Wait for the user to enter the answer
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Enter the answer: ")
-	answerStr, _ := reader.ReadString('\n')
+	answerStr := promptAndRead("Enter offer from web: ")
 
 	// Parse the answer
 	var answer webrtc.SessionDescription
@@ -71,21 +75,11 @@ func main() {
 		panic(err)
 	}
 
-	// Wait for the connection to be established
-	<-peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		return state == webrtc.ICEConnectionStateConnected
-	})
-
 	// Send a message
 	err = dataChannel.SendText("Hello, World!")
 	if err != nil {
 		panic(err)
 	}
-
-	// Wait for a message to be received
-	<-dataChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
-		return string(msg.Data) != ""
-	})
 
 	// Close the peer connection
 	err = peerConnection.Close()
