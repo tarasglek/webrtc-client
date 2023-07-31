@@ -3,8 +3,8 @@ https://stackoverflow.com/questions/54980799/a-complete-example-for-a-webrtc-dat
 <p id="stat"></p>
 <button id="button" onclick="createOffer()">Offer:</button>
 <br />
-Chat: <input id="chat" /><br />
-<div id="output">Chat:</div>
+<div id="output"></div>
+Input: <input id="chat" /><br />
 <script>
   const chat = document.getElementById("chat");
   const output = document.getElementById("output");
@@ -31,7 +31,7 @@ Chat: <input id="chat" /><br />
     output.appendChild(textarea);
     // output.appendChild(document.createElement('br'));
   };
-  pc.onopen = () => {
+  dc.onopen = () => {
     console.log("onopen");
     isOpen = true;
   };
@@ -71,7 +71,7 @@ Chat: <input id="chat" /><br />
       }
       return
     }
-    dc.send(chat.value);
+    dc.send(chat.value+"\n");
     log(chat.value);
     chat.value = "";
   };

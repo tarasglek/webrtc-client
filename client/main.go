@@ -5,10 +5,60 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/pion/webrtc/v3"
 )
+
+func printAsJSON(kind string, msg string) string {
+	msgJSON, _ := json.Marshal(msg)
+	fmt.Println(kind, string(msgJSON))
+	return msg
+}
+
+func runCommandAndPipeToDataChannel(dataChannel *webrtc.DataChannel, cmdString string) {
+	// Create a new command
+	fmt.Println("running command", cmdString)
+	command := exec.Command("/bin/sh", "-c", cmdString)
+
+	// Get the input/output pipes
+	stdin, _ := command.StdinPipe()
+	stdout, _ := command.StdoutPipe()
+	stderr, _ := command.StderrPipe()
+
+	// Handle incoming DataChannel messages
+	dataChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
+		// Write the incoming message to the command's stdin
+		// convert data to string and print as json
+		msgStr := string(msg.Data)
+		msgJSON, _ := json.Marshal(msgStr)
+		fmt.Println("OnMessage", string(msgJSON))
+		stdin.Write(msg.Data)
+	})
+
+	// Read from the command's stdout and stderr and send the output over the DataChannel
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			dataChannel.SendText(printAsJSON("stdout", scanner.Text()))
+		}
+	}()
+
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			dataChannel.SendText(printAsJSON("stderr", scanner.Text()))
+
+		}
+	}()
+
+	fmt.Println("starting command:", cmdString)
+	// Start the command
+	command.Start()
+	// Wait for the command to finish
+	command.Wait()
+}
 
 func promptAndRead(prompt string) string {
 	reader := bufio.NewReader(os.Stdin)
@@ -18,6 +68,15 @@ func promptAndRead(prompt string) string {
 }
 
 func main() {
+	// Check command line arguments
+	if len(os.Args) != 2 {
+		fmt.Printf("Usage: %s <cmd_string>\n", os.Args[0])
+		os.Exit(1)
+	}
+
+	// Get the command string
+	cmdString := os.Args[1]
+
 	// Prepare the configuration
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
@@ -42,14 +101,22 @@ func main() {
 		panic(err)
 	}
 
-	// Handle messages from the data channel
-	dataChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
-		fmt.Println(string(msg.Data))
+	dataChannel.OnOpen(func() {
+		fmt.Println("Data channel is open")
 	})
+
+	// Handle messages from the data channel
+	// dataChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
+	// 	fmt.Println(string(msg.Data))
+	// })
 
 	// Handle ICE connection state changes
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
 		fmt.Println("ICE Connection State has changed:", connectionState.String())
+		if connectionState == webrtc.ICEConnectionStateConnected {
+			runCommandAndPipeToDataChannel(dataChannel, cmdString)
+		}
+
 	})
 
 	offerJSON := promptAndRead("Enter offer from web: ")
@@ -110,13 +177,6 @@ func main() {
 	// }
 	// fmt.Println("paste this answer in web:")
 	// fmt.Println(string(answerJSON))
-
-	dataChannel.OnOpen(func() {
-		err := dataChannel.SendText("Hello, World!")
-		if err != nil {
-			panic(err)
-		}
-	})
 
 	// Infinite loop
 	for {
