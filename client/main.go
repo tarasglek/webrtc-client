@@ -22,7 +22,8 @@ func main() {
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{
-				URLs: []string{"stun:sturn.1.google.com:19302"},
+				URLs:           []string{"stun:stun.1.google.com:19302"},
+				CredentialType: webrtc.ICECredentialTypeOauth,
 			},
 		},
 	}
@@ -34,7 +35,9 @@ func main() {
 	}
 
 	// Create a data channel
-	dataChannel, err := peerConnection.CreateDataChannel("chat", nil)
+	dataChannel, err := peerConnection.CreateDataChannel("chat", &webrtc.DataChannelInit{
+		MaxPacketLifeTime: new(uint16),
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -49,28 +52,9 @@ func main() {
 		fmt.Println("ICE Connection State has changed:", connectionState.String())
 	})
 
-	// Handle ICE candidates
-	peerConnection.OnICECandidate(func(candidate *webrtc.ICECandidate) {
-		if candidate != nil {
-			candidateJSON, err := json.Marshal(candidate.ToJSON())
-			if err != nil {
-				panic(err)
-			}
-			fmt.Println("ICE Candidate:", string(candidateJSON))
-		}
-	})
-
-	// Create a channel to signal when ICE gathering is complete
-	gatherComplete := webrtc.GatheringCompletePromise(peerConnection)
-
 	offerJSON := promptAndRead("Enter offer from web: ")
 
-	// Parse the answer
-	// var answerSDP string
-	// json.Unmarshal([]byte(answerStr), &answer)
-
-	// fmt.Println(offerJSON)
-	// Set the remote description
+	// Parse the offer
 	offer := webrtc.SessionDescription{}
 	json.Unmarshal([]byte(offerJSON), &offer)
 
@@ -91,16 +75,41 @@ func main() {
 		panic(err)
 	}
 
-	// Wait for ICE gathering to complete
-	<-gatherComplete
+	/*
+			      pc.onicecandidate = ({ candidate }) => {
+		        if (candidate) return;
+		        const answer = pc.localDescription;
+		        log(JSON.stringify(answer));
+		      };
+	*/
+	peerConnection.OnICECandidate(func(candidate *webrtc.ICECandidate) {
+		if candidate != nil {
+			return
+		}
+		answer := peerConnection.LocalDescription()
+		answerJSON, err := json.Marshal(answer)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("paste this answer in web:")
+		fmt.Println(string(answerJSON))
+	})
+	// Create a channel to signal when ICE gathering is complete
+	// gatherComplete := webrtc.GatheringCompletePromise(peerConnection)
 
-	// Print the answer.SDP as JSON
-	answerJSON, err := json.Marshal(answer)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("paste this answer in web:")
-	fmt.Println(string(answerJSON))
+	// Wait for ICE gathering to complete
+	// <-gatherComplete
+
+	// // Get the final session description
+	// finalAnswer := peerConnection.LocalDescription()
+
+	// // Print the answer.SDP as JSON
+	// answerJSON, err := json.Marshal(finalAnswer)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// fmt.Println("paste this answer in web:")
+	// fmt.Println(string(answerJSON))
 
 	dataChannel.OnOpen(func() {
 		err := dataChannel.SendText("Hello, World!")
@@ -109,11 +118,6 @@ func main() {
 		}
 	})
 
-	// // Close the peer connection
-	// err = peerConnection.Close()
-	// if err != nil {
-	// 	panic(err)
-	// }
 	// Infinite loop
 	for {
 		time.Sleep(time.Second)

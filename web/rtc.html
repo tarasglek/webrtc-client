@@ -33,18 +33,23 @@ Chat: <input id="chat" /><br />
   dc.onopen = () => chat.select();
   dc.onmessage = (e) => log(`${e.data}`);
   pc.oniceconnectionstatechange = (e) => log(pc.iceConnectionState);
-
+  pc.onsignalingstatechange = () => {
+        console.log(`onsignalingstatechange: signalingState: ${pc.signalingState}`);
+      };
   chat.onkeypress = async function (e) {
     if (e.keyCode != 13) return;
     // if got message and state is new, means message is offer from other node
     if (pc.connectionState == "new") {
       let offer = JSON.parse(chat.value);
       chat.value = "";
-      console.log(`setRemoteDescription(${JSON.stringify(offer)})`);
+
+      console.log(`[pc.connectionState == "new"] prior to setRemoteDescription() signalingState: ${pc.signalingState}`);
       await pc.setRemoteDescription(offer);
+      console.log(`[pc.connectionState == "new"] prior to setLocalDescription() signalingState: ${pc.signalingState}`);
       await pc.setLocalDescription(await pc.createAnswer());
       console.log(`setLocalDescription`);
       pc.onicecandidate = ({ candidate }) => {
+        console.log(`[pc.connectionState == "new"] onicecandidate() signalingState: ${pc.signalingState} candidate: ${candidate}`);
         if (candidate) return;
         const answer = pc.localDescription;
         log(JSON.stringify(answer));
@@ -53,7 +58,12 @@ Chat: <input id="chat" /><br />
     } else if (pc.connectionState == "connecting") {
       const answer = JSON.parse(chat.value);
       chat.value = "";
-      pc.setRemoteDescription(answer);
+      console.log(`[pc.connectionState == "connecting"] prior to setRemoteDescription() signalingState: ${pc.signalingState}`);
+      // pc.setRemoteDescription(answer);
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      console.log(`[pc.connectionState == "connecting"] prior to createAnswer() signalingState: ${pc.signalingState}`);
+      // await pc.createAnswer().then(answer => pc.setLocalDescription(answer));
+      return
     }
     dc.send(chat.value);
     log(chat.value);
@@ -64,6 +74,7 @@ Chat: <input id="chat" /><br />
     button.disabled = true;
     await pc.setLocalDescription(await pc.createOffer());
     pc.onicecandidate = ({ candidate }) => {
+      console.log(`[createOffer()] onicecandidate() signalingState: ${pc.signalingState} candidate: ${candidate}`);
       if (candidate) return;
       log(JSON.stringify(pc.localDescription));
     };
