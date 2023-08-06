@@ -18,6 +18,8 @@ type CommandResult struct {
 	Error  string `json:"error,omitempty"`
 }
 
+const PION_MAX_MSG_SIZE = 65535
+
 func runCommandWithTimeout(shell []string, cmd string, timeout time.Duration) string {
 	resultChan := make(chan CommandResult)
 	errorChan := make(chan error)
@@ -129,9 +131,17 @@ func main() {
 		msgJSON, _ := json.Marshal(msgStr)
 		fmt.Println("OnMessage", string(msgJSON))
 		ret := runCommandWithTimeout(default_shell, string(msg.Data), 1*time.Second)
-		err := dataChannel.SendText(ret)
-		if err != nil {
-			panic(err)
+		// split ret into chunks of PION_MAX_MSG_SIZE
+		// and send each chunk
+		for i := 0; i < len(ret); i += PION_MAX_MSG_SIZE {
+			end := i + PION_MAX_MSG_SIZE
+			if end > len(ret) {
+				end = len(ret)
+			}
+			err := dataChannel.SendText(ret[i:end])
+			if err != nil {
+				panic(err)
+			}
 		}
 	})
 
