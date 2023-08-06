@@ -129,12 +129,19 @@ func main() {
 		msgJSON, _ := json.Marshal(msgStr)
 		fmt.Println("OnMessage", string(msgJSON))
 		ret := runCommandWithTimeout(default_shell, string(msg.Data), 1*time.Second)
-		dataChannel.SendText(ret)
+		err := dataChannel.SendText(ret)
+		if err != nil {
+			panic(err)
+		}
 	})
 
 	// Handle ICE connection state changes
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
 		fmt.Println("ICE Connection State has changed:", connectionState.String())
+		if (connectionState == webrtc.ICEConnectionStateFailed) || (connectionState == webrtc.ICEConnectionStateDisconnected) {
+			// exit with error message
+			os.Exit(1)
+		}
 		// if connectionState == webrtc.ICEConnectionStateConnected {
 		// }
 	})

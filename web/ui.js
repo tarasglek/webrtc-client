@@ -1,22 +1,11 @@
 
 const chat = document.getElementById("chat");
 const output = document.getElementById("output");
-const config = {
-    iceServers: [
-        {
-            urls: "stun:stun.1.google.com:19302",
-        },
-    ],
-};
-const pc = new RTCPeerConnection(config);
-let isOpen = false;
-const dc = pc.createDataChannel("chat", {
-    negotiated: true,
-    id: 0,
-});
+
 // const log = msg => output.innerHTML += `<br>${msg}`;
 // append textarea for every message
 const log = (msg) => {
+    console.log(msg);
     let textarea = document.createElement("textarea");
     // make it full with and 3 rows
     // calculate number of lines in msg or max of strlen/80
@@ -30,20 +19,32 @@ const log = (msg) => {
     output.appendChild(textarea);
     // output.appendChild(document.createElement('br'));
 };
-dc.onopen = () => {
-    console.log("onopen");
-    isOpen = true;
+const config = {
+    iceServers: [
+        {
+            urls: "stun:stun.1.google.com:19302",
+        },
+    ],
 };
 
-dc.onmessage = (e) => log(`${e.data}`);
-pc.oniceconnectionstatechange = (e) => log(pc.iceConnectionState);
-pc.onsignalingstatechange = () => {
-    console.log(`onsignalingstatechange: signalingState: ${pc.signalingState}`);
-};
-
-let sentOffer = false;
+let pc = null
+let dc = null
 
 async function createOffer() {
+    pc = new RTCPeerConnection(config);
+    dc = pc.createDataChannel("chat", {
+        negotiated: true,
+        id: 0,
+    });
+
+    dc.onmessage = (e) => log(`${e.data}`);
+    pc.oniceconnectionstatechange = (e) => log(pc.iceConnectionState);
+    pc.onsignalingstatechange = () => {
+        console.log(`onsignalingstatechange: signalingState: ${pc.signalingState}`);
+    };
+    pc.onconnectionstatechange = (ev) => handleChange();
+    pc.oniceconnectionstatechange = (ev) => handleChange();
+
     button.disabled = true;
     await pc.setLocalDescription(await pc.createOffer());
     pc.onicecandidate = ({ candidate }) => {
@@ -51,13 +52,14 @@ async function createOffer() {
         if (candidate) return;
         log(JSON.stringify(pc.localDescription));
     };
-    sentOffer = true;
+    handleChange();
+
 }
 
 async function handleInput(input) {
     // if got message and state is new, means message is offer from other node
-    if (!sentOffer && pc.connectionState == "new") {
-        createOffer();
+    if (!pc) {
+        await createOffer();
         return
     } else if (pc.connectionState != "connected") {
         if (pc.signalingState == "stable") {
@@ -93,8 +95,6 @@ chat.onkeypress = async function (e) {
     chat.value = "";
 };
 
-pc.onconnectionstatechange = (ev) => handleChange();
-pc.oniceconnectionstatechange = (ev) => handleChange();
 
 function handleChange() {
     let stat =
@@ -117,5 +117,4 @@ function handleChange() {
     colors.push("color:yellow", "color:orange");
     console.log(msg, ...colors);
 }
-handleChange();
 handleInput("offer")
