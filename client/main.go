@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"syscall"
 	"time"
 
 	"github.com/pion/webrtc/v3"
@@ -21,7 +22,9 @@ func printAsJSON(kind string, msg string) string {
 func runCommandAndPipeToDataChannel(dataChannel *webrtc.DataChannel, cmdString string) {
 	fmt.Println("running command", cmdString)
 	command := exec.Command("/bin/sh", "-c", cmdString)
-
+	command.SysProcAttr = &syscall.SysProcAttr{
+		Setsid: true, // this makes it so ctrl-c works
+	}
 	stdin, _ := command.StdinPipe()
 	stdout, _ := command.StdoutPipe()
 	stderr, _ := command.StderrPipe()
