@@ -4,10 +4,9 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
-	"syscall"
+	"runtime"
 	"time"
 
 	"github.com/pion/webrtc/v3"
@@ -19,51 +18,55 @@ func printAsJSON(kind string, msg string) string {
 	return msg
 }
 
-func runCommandAndPipeToDataChannel(dataChannel *webrtc.DataChannel, cmdString string) {
-	fmt.Println("running command", cmdString)
-	command := exec.Command("/bin/sh", "-c", cmdString)
-	command.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true, // this makes it so ctrl-c works
-	}
-	stdin, _ := command.StdinPipe()
-	stdout, _ := command.StdoutPipe()
-	stderr, _ := command.StderrPipe()
+type CommandResult struct {
+	Output string `json:"output"`
+	Error  string `json:"error,omitempty"`
+}
 
-	dataChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
-		msgStr := string(msg.Data)
-		msgJSON, _ := json.Marshal(msgStr)
-		fmt.Println("OnMessage", string(msgJSON))
-		stdin.Write(msg.Data)
-	})
+func runCommandWithTimeout(cmd string, timeout time.Duration) string {
+	resultChan := make(chan CommandResult)
+	errorChan := make(chan error)
+	// Run the command in a goroutine so we can kill it if it times out
+	go func() {
+		var command *exec.Cmd
 
-	readAndSend := func(r io.Reader, prefix string) {
-		buf := make([]byte, 1024)
-		for {
-			n, err := r.Read(buf)
-			if err != nil {
-				break
-			}
-			dataChannel.SendText(printAsJSON(prefix, string(buf[:n])))
+		if runtime.GOOS == "windows" {
+			command = exec.Command("cmd", "/C", cmd)
+		} else {
+			command = exec.Command("/bin/sh", "-c", cmd)
 		}
+
+		output, err := command.CombinedOutput()
+		if err != nil {
+			errorChan <- err
+			return
+		}
+
+		resultChan <- CommandResult{Output: string(output)}
+	}()
+
+	select {
+	case result := <-resultChan:
+		jsonResult, err := json.Marshal(result)
+		if err != nil {
+			panic(err)
+		}
+		return string(jsonResult)
+	case err := <-errorChan:
+		result := CommandResult{Error: err.Error()}
+		jsonResult, err := json.Marshal(result)
+		if err != nil {
+			panic(err)
+		}
+		return string(jsonResult)
+	case <-time.After(timeout):
+		result := CommandResult{Error: "Command timed out"}
+		jsonResult, err := json.Marshal(result)
+		if err != nil {
+			panic(err)
+		}
+		return string(jsonResult)
 	}
-
-	go readAndSend(stdout, "stdout")
-	go readAndSend(stderr, "stderr")
-
-	fmt.Println("starting command:", cmdString)
-	command.Start()
-
-	// below is not working for handling ctrl-c
-	// c := make(chan os.Signal, 1)
-	// signal.Notify(c, os.Interrupt)
-	// go func() {
-	// 	<-c
-	// 	fmt.Println("killing command:", cmdString)
-	// 	command.Process.Kill()
-	// 	os.Exit(1)
-	// }()
-
-	command.Wait()
 }
 
 func promptAndRead(prompt string) string {
@@ -74,15 +77,6 @@ func promptAndRead(prompt string) string {
 }
 
 func main() {
-	// Check command line arguments
-	if len(os.Args) != 2 {
-		fmt.Printf("Usage: %s <cmd_string>\n", os.Args[0])
-		os.Exit(1)
-	}
-
-	// Get the command string
-	cmdString := os.Args[1]
-
 	// Prepare the configuration
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
@@ -111,16 +105,20 @@ func main() {
 		fmt.Println("Data channel is open")
 	})
 
-	// Handle messages from the data channel
-	// dataChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
-	// 	fmt.Println(string(msg.Data))
-	// })
+	dataChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
+		msgStr := string(msg.Data)
+		msgJSON, _ := json.Marshal(msgStr)
+		fmt.Println("OnMessage", string(msgJSON))
+		ret := runCommandWithTimeout(string(msg.Data), 1*time.Second)
+		dataChannel.SendText(ret)
+	})
 
 	// Handle ICE connection state changes
 	peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
 		fmt.Println("ICE Connection State has changed:", connectionState.String())
 		if connectionState == webrtc.ICEConnectionStateConnected {
-			runCommandAndPipeToDataChannel(dataChannel, cmdString)
+			// send fake bash prompt
+			dataChannel.SendText("bash$ ")
 		}
 
 	})
@@ -148,13 +146,6 @@ func main() {
 		panic(err)
 	}
 
-	/*
-			      pc.onicecandidate = ({ candidate }) => {
-		        if (candidate) return;
-		        const answer = pc.localDescription;
-		        log(JSON.stringify(answer));
-		      };
-	*/
 	peerConnection.OnICECandidate(func(candidate *webrtc.ICECandidate) {
 		if candidate != nil {
 			return
@@ -167,25 +158,6 @@ func main() {
 		fmt.Println("paste this answer in web:")
 		fmt.Println(string(answerJSON))
 	})
-	// Create a channel to signal when ICE gathering is complete
-	// gatherComplete := webrtc.GatheringCompletePromise(peerConnection)
-
-	// Wait for ICE gathering to complete
-	// <-gatherComplete
-
-	// // Get the final session description
-	// finalAnswer := peerConnection.LocalDescription()
-
-	// // Print the answer.SDP as JSON
-	// answerJSON, err := json.Marshal(finalAnswer)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// fmt.Println("paste this answer in web:")
-	// fmt.Println(string(answerJSON))
-
-	// Infinite loop
-	for {
-		time.Sleep(time.Second)
-	}
+	// infinite loop
+	select {}
 }
