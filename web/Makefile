@@ -1,2 +1,2 @@
 all:
-	miniserve -p 8000 rtc.html
+	miniserve -p 8000 --index index.html
