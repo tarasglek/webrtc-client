@@ -50,10 +50,6 @@ chat.onkeypress = async function (e) {
     const msgIn = chat.value
     chat.value = "";
     let obj = undefined
-    try {
-        obj = JSON.parse(msgIn)
-    } catch (e) {
-    }
-    log(await rtc_msg({cmd:msgIn, webrtc_offer_reply_obj:obj}));
+    log(await rtc_msg({cmd:msgIn}));
 };
 rtc_msg({}).then(log)

@@ -14,10 +14,6 @@ export const parameters = {
         cmd: {
             type: "string",
             description: "Valid shell command",
-        },
-        webrtc_offer_reply_obj: {
-            type: "string",
-            description: "WebRTC offer to establish connection",
         }
     },
     required: ["cmd"],
@@ -46,7 +42,7 @@ class RTC {
         return this.pc && this.pc.connectionState == "connected";
     }
 
-    async connectAndcreateOffer() {
+    async connectAndcreateOffer(): Promise<string> {
         const config = {
             iceServers: [
                 {
@@ -84,7 +80,7 @@ class RTC {
         });
     }
 
-    async handleInput(input: string) {
+    async handleInput(input: string): Promise<string> {
         if (!this.pc) {
             return await this.connectAndcreateOffer();
         } else if (this.pc.connectionState != "connected") {
@@ -114,7 +110,7 @@ class RTC {
             {
                 const answer = JSON.parse(input);
                 let self = this;
-                const ret = new Promise((resolve, reject) => {
+                const ret = new Promise<string>((resolve, reject) => {
                     this._onConnected_cb = () => {
                         resolve("connected");
                     }
@@ -126,7 +122,7 @@ class RTC {
         // if we got here we are connected
         // send message
         // wait for response
-        const ret = new Promise((resolve, reject) => {
+        const ret = new Promise<string>((resolve, reject) => {
             this.dc.send(input);
             this._onMessage_cb = resolve;
         });
@@ -137,19 +133,14 @@ class RTC {
 
 export default async function (value: any) {
     const cmd = value.cmd;
-    const webrtc_offer_reply_obj = value.webrtc_offer_reply_obj;
     let rtc = (window as any).rtc as RTC;
     console.log(`rtc: ${!!rtc}`);
     console.log("this", typeof(this), this);
     if (!rtc) {
         (window as any).rtc = rtc = new RTC();
-        console.log(await rtc.handleInput(""))
-        return "see dev console";
-    } else if (!rtc.connected) {
-        if (!webrtc_offer_reply_obj) {
-            return "Error: Not connected. webrtc_offer_reply_obj must be provided to connect.";
-        }
-        return await rtc.handleInput(prompt("Enter reply offer")!);
+        const offer = await rtc.handleInput("")
+        let reply = prompt("Copy this offer to other node, and paste reply", offer);
+        return await rtc.handleInput(reply!);
     }
     return rtc.handleInput(cmd)
 }
