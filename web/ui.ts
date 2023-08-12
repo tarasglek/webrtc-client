@@ -19,84 +19,8 @@ const log = (msg) => {
     output.appendChild(textarea);
     // output.appendChild(document.createElement('br'));
 };
-const config = {
-    iceServers: [
-        {
-            urls: "stun:stun.1.google.com:19302",
-        },
-    ],
-};
 
-let pc = null
-let dc = null
-
-async function createOffer() {
-    pc = new RTCPeerConnection(config);
-    dc = pc.createDataChannel("chat", {
-        negotiated: true,
-        id: 0,
-    });
-
-    dc.onmessage = (e) => log(`${e.data}`);
-    pc.oniceconnectionstatechange = (e) => log(pc.iceConnectionState);
-    pc.onsignalingstatechange = () => {
-        console.log(`onsignalingstatechange: signalingState: ${pc.signalingState}`);
-    };
-    pc.onconnectionstatechange = (ev) => handleChange();
-    pc.oniceconnectionstatechange = (ev) => handleChange();
-
-    button.disabled = true;
-    await pc.setLocalDescription(await pc.createOffer());
-    pc.onicecandidate = ({ candidate }) => {
-        console.log(`[createOffer()] onicecandidate() signalingState: ${pc.signalingState} candidate: ${candidate}`);
-        if (candidate) return;
-        log(JSON.stringify(pc.localDescription));
-    };
-    handleChange();
-
-}
-
-async function handleInput(input) {
-    // if got message and state is new, means message is offer from other node
-    if (!pc) {
-        await createOffer();
-        return
-    } else if (pc.connectionState != "connected") {
-        if (pc.signalingState == "stable") {
-            let offer = JSON.parse(input);
-
-            console.log(`[pc.connectionState == "new"] prior to setRemoteDescription() signalingState: ${pc.signalingState}`);
-            await pc.setRemoteDescription(offer);
-            console.log(`[pc.connectionState == "new"] prior to setLocalDescription() signalingState: ${pc.signalingState}`);
-            await pc.setLocalDescription(await pc.createAnswer());
-            console.log(`setLocalDescription`);
-            pc.onicecandidate = ({ candidate }) => {
-                console.log(`[pc.connectionState == "new"] onicecandidate() signalingState: ${pc.signalingState} candidate: ${candidate}`);
-                if (candidate) return;
-                const answer = pc.localDescription;
-                log(JSON.stringify(answer));
-            };
-        } else if (pc.signalingState == "have-local-offer") {
-            const answer = JSON.parse(input);
-            console.log(`[pc.connectionState == "connecting"] prior to setRemoteDescription() signalingState: ${pc.signalingState}`);
-            // pc.setRemoteDescription(answer);
-            await pc.setRemoteDescription(new RTCSessionDescription(answer));
-            console.log(`[pc.connectionState == "connecting"] prior to createAnswer() signalingState: ${pc.signalingState}`);
-            // await pc.createAnswer().then(answer => pc.setLocalDescription(answer));
-        }
-        return
-    }
-    dc.send(input);
-}
-
-chat.onkeypress = async function (e) {
-    if (e.keyCode != 13) return;
-    handleInput(chat.value);
-    chat.value = "";
-};
-
-
-function handleChange() {
+function handleChange(pc: RTCPeerConnection) {
     let stat =
         "ConnectionState: <strong>" +
         pc.connectionState +
@@ -117,4 +41,86 @@ function handleChange() {
     colors.push("color:yellow", "color:orange");
     console.log(msg, ...colors);
 }
-handleInput("offer")
+
+class RTC {
+    pc: RTCPeerConnection;
+    dc: RTCDataChannel;
+
+    constructor() {
+    }
+
+    async createOffer() {
+        const config = {
+            iceServers: [
+                {
+                    urls: "stun:stun.1.google.com:19302",
+                },
+            ],
+        };
+        this.pc = new RTCPeerConnection(config);
+        this.dc = this.pc.createDataChannel("chat", {
+            negotiated: true,
+            id: 0,
+        });
+        const dc = this.dc
+        const pc = this.pc
+        dc.onmessage = (e) => log(`${e.data}`);
+        pc.oniceconnectionstatechange = (e) => log(pc.iceConnectionState);
+        pc.onsignalingstatechange = () => {
+            console.log(`onsignalingstatechange: signalingState: ${this.pc.signalingState}`);
+        };
+        pc.onconnectionstatechange = (ev) => handleChange(pc);
+        pc.oniceconnectionstatechange = (ev) => handleChange(pc);
+
+        await pc.setLocalDescription(await pc.createOffer());
+        pc.onicecandidate = ({ candidate }) => {
+            console.log(`[createOffer()] onicecandidate() signalingState: ${this.pc.signalingState} candidate: ${candidate}`);
+            if (candidate) return;
+            log(JSON.stringify(pc.localDescription));
+        };
+        handleChange(pc);
+
+    }
+
+    async handleInput(input) {
+        // if got message and state is new, means message is offer from other node
+        if (!this.pc) {
+            await this.createOffer();
+            return
+        } else if (this.pc.connectionState != "connected") {
+            if (this.pc.signalingState == "stable") {
+                let offer = JSON.parse(input);
+
+                console.log(`[pc.connectionState == "new"] prior to setRemoteDescription() signalingState: ${this.pc.signalingState}`);
+                await this.pc.setRemoteDescription(offer);
+                console.log(`[pc.connectionState == "new"] prior to setLocalDescription() signalingState: ${this.pc.signalingState}`);
+                await this.pc.setLocalDescription(await this.pc.createAnswer());
+                console.log(`setLocalDescription`);
+                this.pc.onicecandidate = ({ candidate }) => {
+                    console.log(`[pc.connectionState == "new"] onicecandidate() signalingState: ${this.pc.signalingState} candidate: ${candidate}`);
+                    if (candidate) return;
+                    const answer = this.pc.localDescription;
+                    log(JSON.stringify(answer));
+                };
+            } else if (this.pc.signalingState == "have-local-offer") {
+                const answer = JSON.parse(input);
+                console.log(`[pc.connectionState == "connecting"] prior to setRemoteDescription() signalingState: ${this.pc.signalingState}`);
+                // pc.setRemoteDescription(answer);
+                await this.pc.setRemoteDescription(new RTCSessionDescription(answer));
+                console.log(`[pc.connectionState == "connecting"] prior to createAnswer() signalingState: ${this.pc.signalingState}`);
+                // await pc.createAnswer().then(answer => pc.setLocalDescription(answer));
+            }
+            return
+        }
+        this.dc.send(input);
+    }
+}
+
+const rtc = new RTC()
+
+// handleInput("offer")
+chat.onkeypress = async function (e) {
+    if (e.keyCode != 13) return;
+    rtc.handleInput(chat.value);
+    chat.value = "";
+};
