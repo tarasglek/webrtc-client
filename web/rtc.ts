@@ -1,12 +1,38 @@
+export const name = "shell_cmd";
 
-export class RTC {
+export const description = "This executes shell commands over webrtc connection. It's not able to execute interactive commands like vim, prefer to use tee, etc instead";
+
+/**
+* 3. A JSON Schema defining the function's parameters. See:
+*
+* - https://platform.openai.com/docs/guides/gpt/function-calling
+* - https://json-schema.org/learn/getting-started-step-by-step
+*/
+export const parameters = {
+    type: "object",
+    properties: {
+        cmd: {
+            type: "string",
+            description: "Valid shell command",
+        },
+        webrtc_offer_reply_string_of_json: {
+            type: "string",
+            description: "WebRTC offer to establish connection",
+        }
+    },
+    required: ["cmd"],
+};
+
+
+class RTC {
     pc: RTCPeerConnection;
     dc: RTCDataChannel;
     _onMessage_cb: Function | null = null;
     _onConnected_cb: Function | null = null;
-    _wip_msg: string | null = null;
 
     constructor() {
+        this.pc = null as any;
+        this.dc = null as any;
     }
 
     onMessage(msg: string) {
@@ -14,6 +40,10 @@ export class RTC {
             this._onMessage_cb(msg);
         }
         this._onMessage_cb = null;
+    }
+
+    get connected() {
+        return this.pc && this.pc.connectionState == "connected";
     }
 
     async connectAndcreateOffer() {
@@ -56,7 +86,6 @@ export class RTC {
 
     async handleInput(input: string) {
         if (!this.pc) {
-            this._wip_msg = input;
             return await this.connectAndcreateOffer();
         } else if (this.pc.connectionState != "connected") {
             // this is js code for handling case where offer first arrives from elsewhere
@@ -87,12 +116,7 @@ export class RTC {
                 let self = this;
                 const ret = new Promise((resolve, reject) => {
                     this._onConnected_cb = () => {
-                        if (self._wip_msg) {
-                            self.handleInput(self._wip_msg).then(resolve);
-                            self._wip_msg = null;
-                        } else {
-                            resolve("connected");
-                        }
+                        resolve("connected");
                     }
                     this.pc.setRemoteDescription(new RTCSessionDescription(answer));
                 })
@@ -108,4 +132,21 @@ export class RTC {
         });
         return await ret;
     }
+}
+
+let rtc: RTC | null = null;
+
+export default async function (value: any) {
+    const cmd = value.cmd;
+    const webrtc_offer_reply_string_of_json = value.webrtc_offer_reply_string_of_json;
+    if (!rtc) {
+        rtc = new RTC();
+        return await rtc.handleInput("");
+    } else if (!rtc.connected) {
+        if (!webrtc_offer_reply_string_of_json) {
+            return "Error: Not connected. webrtc_offer_reply_string_of_json must be provided to connect.";
+        }
+        return await rtc.handleInput(webrtc_offer_reply_string_of_json);
+    }
+    return rtc.handleInput(cmd)
 }

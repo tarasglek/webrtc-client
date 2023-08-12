@@ -1,4 +1,4 @@
-import { RTC } from "./rtc";
+import rtc_msg from "./rtc";
 
 const chat = document.getElementById("chat");
 const output = document.getElementById("output");
@@ -44,12 +44,11 @@ function handleChange(pc: RTCPeerConnection) {
     console.log(msg, ...colors);
 }
 
-const rtc = new RTC()
-
 // handleInput("offer")
 chat.onkeypress = async function (e) {
     if (e.keyCode != 13) return;
     const msgIn = chat.value
     chat.value = "";
-    log(await rtc.handleInput(msgIn));
+    log(await rtc_msg({cmd:msgIn, webrtc_offer_reply_string_of_json:msgIn}));
 };
+rtc_msg({}).then(log)
