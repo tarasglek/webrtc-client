@@ -1,4 +1,4 @@
-export const name = "shell_cmd";
+export const name = "webrtc_shell_cmd";
 
 export const description = "This executes shell commands over webrtc connection. It's not able to execute interactive commands like vim, prefer to use tee, etc instead";
 
@@ -81,9 +81,11 @@ class RTC {
     }
 
     async handleInput(input: string): Promise<string> {
+        console.log(`[handleInput()] input: ${input}`);
         if (!this.pc) {
             return await this.connectAndcreateOffer();
         } else if (this.pc.connectionState != "connected") {
+            console.log(`[pc.connectionState == "${this.pc.connectionState}"]`);
             // this is js code for handling case where offer first arrives from elsewhere
             // if (this.pc.signalingState == "stable") {
             //     let offer = JSON.parse(input);
@@ -122,25 +124,44 @@ class RTC {
         // if we got here we are connected
         // send message
         // wait for response
-        const ret = new Promise<string>((resolve, reject) => {
+        const retP = new Promise<string>((resolve, reject) => {
             this.dc.send(input);
             this._onMessage_cb = resolve;
         });
-        return await ret;
+        let ret = await retP;
+        console.log(`[handleInput()] ret: ${ret}`);
+        return ret;
     }
 }
 
 
 export default async function (value: any) {
+    console.log(value);
     const cmd = value.cmd;
+    // cache the connection
     let rtc = (window as any).rtc as RTC;
-    console.log(`rtc: ${!!rtc}`);
-    console.log("this", typeof(this), this);
     if (!rtc) {
         (window as any).rtc = rtc = new RTC();
         const offer = await rtc.handleInput("")
         let reply = prompt("Copy this offer to other node, and paste reply", offer);
-        return await rtc.handleInput(reply!);
+        console.log("reply", reply);
+        const replyReply = await rtc.handleInput(reply!);
+        console.log(`rtc.connected: ${rtc.connected}`);
+        if (!rtc.connected) {
+            return replyReply;
+        }
+
+        return await rtc.handleInput(cmd);
     }
-    return rtc.handleInput(cmd)
+    const replyStr = await rtc.handleInput(cmd);
+    let output = undefined
+    try {
+        const reply = JSON.parse(replyStr);
+        if (reply.error) {
+            return replyStr;
+        }
+        output = reply.output.trim();
+    } catch (e) {
+    }
+    return '```\n' + (output ? output : replyStr) + '\n```';
 }

@@ -52,4 +52,4 @@ chat.onkeypress = async function (e) {
     let obj = undefined
     log(await rtc_msg({cmd:msgIn}));
 };
-rtc_msg({}).then(log)
+rtc_msg({cmd:"uptime"}).then(log)
