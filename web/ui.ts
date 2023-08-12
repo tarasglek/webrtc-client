@@ -1,7 +1,7 @@
 
 const chat = document.getElementById("chat");
 const output = document.getElementById("output");
-
+chat?.focus();
 // const log = msg => output.innerHTML += `<br>${msg}`;
 // append textarea for every message
 const log = (msg) => {
@@ -17,6 +17,7 @@ const log = (msg) => {
     textarea.style = `width:100%;height:${lines + 1.2}em;`
     textarea.value = msg;
     output.appendChild(textarea);
+    return msg
     // output.appendChild(document.createElement('br'));
 };
 
@@ -45,8 +46,28 @@ function handleChange(pc: RTCPeerConnection) {
 class RTC {
     pc: RTCPeerConnection;
     dc: RTCDataChannel;
+    _onMessage_cb: Function | null = null;
+    _onConnected_cb: Function | null = null;
 
     constructor() {
+    }
+
+    onMessage(msg: string) {
+        if (this._onMessage_cb) {
+            this._onMessage_cb(msg);
+        }
+        this._onMessage_cb = null;
+    }
+
+    onConnectionStateChange() {
+        console.log(`onConnectionStateChange() signalingState: ${this.pc.connectionState}`);
+        handleChange(this.pc);
+        if (this.pc.connectionState == "connected") {
+            if (this._onConnected_cb) {
+                this._onConnected_cb();
+            }
+            this._onConnected_cb = null;
+        }
     }
 
     async createOffer() {
@@ -64,29 +85,26 @@ class RTC {
         });
         const dc = this.dc
         const pc = this.pc
-        dc.onmessage = (e) => log(`${e.data}`);
-        pc.oniceconnectionstatechange = (e) => log(pc.iceConnectionState);
-        pc.onsignalingstatechange = () => {
-            console.log(`onsignalingstatechange: signalingState: ${this.pc.signalingState}`);
-        };
-        pc.onconnectionstatechange = (ev) => handleChange(pc);
+        let self = this;
         pc.oniceconnectionstatechange = (ev) => handleChange(pc);
+        pc.onconnectionstatechange = (ev) => self.onConnectionStateChange()
+        dc.onmessage = (ev) => self.onMessage(ev.data);
 
         await pc.setLocalDescription(await pc.createOffer());
-        pc.onicecandidate = ({ candidate }) => {
-            console.log(`[createOffer()] onicecandidate() signalingState: ${this.pc.signalingState} candidate: ${candidate}`);
-            if (candidate) return;
-            log(JSON.stringify(pc.localDescription));
-        };
-        handleChange(pc);
-
+        return new Promise((resolve, reject) => {
+            pc.onicecandidate = ({ candidate }) => {
+                console.log(`[createOffer()] onicecandidate() signalingState: ${this.pc.signalingState} candidate: ${candidate}`);
+                if (candidate) return;
+                const offer = JSON.stringify(pc.localDescription)
+                resolve(offer);
+            };
+        });
     }
 
     async handleInput(input) {
         // if got message and state is new, means message is offer from other node
         if (!this.pc) {
-            await this.createOffer();
-            return
+            return await this.createOffer();
         } else if (this.pc.connectionState != "connected") {
             if (this.pc.signalingState == "stable") {
                 let offer = JSON.parse(input);
@@ -96,23 +114,35 @@ class RTC {
                 console.log(`[pc.connectionState == "new"] prior to setLocalDescription() signalingState: ${this.pc.signalingState}`);
                 await this.pc.setLocalDescription(await this.pc.createAnswer());
                 console.log(`setLocalDescription`);
-                this.pc.onicecandidate = ({ candidate }) => {
-                    console.log(`[pc.connectionState == "new"] onicecandidate() signalingState: ${this.pc.signalingState} candidate: ${candidate}`);
-                    if (candidate) return;
-                    const answer = this.pc.localDescription;
-                    log(JSON.stringify(answer));
-                };
+                const ret = new Promise((resolve, reject) => {
+                    this.pc.onicecandidate = ({ candidate }) => {
+                        console.log(`[pc.connectionState == "new"] onicecandidate() signalingState: ${this.pc.signalingState} candidate: ${candidate}`);
+                        if (candidate) return;
+                        const answer = JSON.stringify(this.pc.localDescription);
+                        resolve(answer);
+                    };
+                });
+                return await ret;
             } else if (this.pc.signalingState == "have-local-offer") {
                 const answer = JSON.parse(input);
                 console.log(`[pc.connectionState == "connecting"] prior to setRemoteDescription() signalingState: ${this.pc.signalingState}`);
                 // pc.setRemoteDescription(answer);
-                await this.pc.setRemoteDescription(new RTCSessionDescription(answer));
-                console.log(`[pc.connectionState == "connecting"] prior to createAnswer() signalingState: ${this.pc.signalingState}`);
-                // await pc.createAnswer().then(answer => pc.setLocalDescription(answer));
+                const ret = new Promise((resolve, reject) => {
+                    this._onConnected_cb = () => resolve("connected");
+                    this.pc.setRemoteDescription(new RTCSessionDescription(answer));
+                })
+                return await ret;
             }
-            return
+            throw new Error(`[handleInput()] unexpected signalingState: ${this.pc.signalingState}`);
         }
-        this.dc.send(input);
+        // if we got here we are connected
+        // send message
+        // wait for response
+        const ret = new Promise((resolve, reject) => {
+            this.dc.send(input);
+            this._onMessage_cb = resolve;
+        });
+        return await ret;
     }
 }
 
@@ -121,6 +151,7 @@ const rtc = new RTC()
 // handleInput("offer")
 chat.onkeypress = async function (e) {
     if (e.keyCode != 13) return;
-    rtc.handleInput(chat.value);
+    const msgIn = chat.value
     chat.value = "";
+    log(await rtc.handleInput(msgIn));
 };
