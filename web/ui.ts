@@ -49,6 +49,11 @@ chat.onkeypress = async function (e) {
     if (e.keyCode != 13) return;
     const msgIn = chat.value
     chat.value = "";
-    log(await rtc_msg({cmd:msgIn, webrtc_offer_reply_string_of_json:msgIn}));
+    let obj = undefined
+    try {
+        obj = JSON.parse(msgIn)
+    } catch (e) {
+    }
+    log(await rtc_msg({cmd:msgIn, webrtc_offer_reply_obj:obj}));
 };
 rtc_msg({}).then(log)

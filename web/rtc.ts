@@ -15,7 +15,7 @@ export const parameters = {
             type: "string",
             description: "Valid shell command",
         },
-        webrtc_offer_reply_string_of_json: {
+        webrtc_offer_reply_obj: {
             type: "string",
             description: "WebRTC offer to establish connection",
         }
@@ -134,19 +134,22 @@ class RTC {
     }
 }
 
-let rtc: RTC | null = null;
 
 export default async function (value: any) {
     const cmd = value.cmd;
-    const webrtc_offer_reply_string_of_json = value.webrtc_offer_reply_string_of_json;
+    const webrtc_offer_reply_obj = value.webrtc_offer_reply_obj;
+    let rtc = (window as any).rtc as RTC;
+    console.log(`rtc: ${!!rtc}`);
+    console.log("this", typeof(this), this);
     if (!rtc) {
-        rtc = new RTC();
-        return await rtc.handleInput("");
+        (window as any).rtc = rtc = new RTC();
+        console.log(await rtc.handleInput(""))
+        return "see dev console";
     } else if (!rtc.connected) {
-        if (!webrtc_offer_reply_string_of_json) {
-            return "Error: Not connected. webrtc_offer_reply_string_of_json must be provided to connect.";
+        if (!webrtc_offer_reply_obj) {
+            return "Error: Not connected. webrtc_offer_reply_obj must be provided to connect.";
         }
-        return await rtc.handleInput(webrtc_offer_reply_string_of_json);
+        return await rtc.handleInput(prompt("Enter reply offer")!);
     }
     return rtc.handleInput(cmd)
 }
