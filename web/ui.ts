@@ -48,6 +48,7 @@ class RTC {
     dc: RTCDataChannel;
     _onMessage_cb: Function | null = null;
     _onConnected_cb: Function | null = null;
+    _wip_msg: string | null = null;
 
     constructor() {
     }
@@ -62,15 +63,9 @@ class RTC {
     onConnectionStateChange() {
         console.log(`onConnectionStateChange() signalingState: ${this.pc.connectionState}`);
         handleChange(this.pc);
-        if (this.pc.connectionState == "connected") {
-            if (this._onConnected_cb) {
-                this._onConnected_cb();
-            }
-            this._onConnected_cb = null;
-        }
     }
 
-    async createOffer() {
+    async connectAndcreateOffer() {
         const config = {
             iceServers: [
                 {
@@ -87,8 +82,15 @@ class RTC {
         const pc = this.pc
         let self = this;
         pc.oniceconnectionstatechange = (ev) => handleChange(pc);
-        pc.onconnectionstatechange = (ev) => self.onConnectionStateChange()
+        pc.onconnectionstatechange = (ev) => handleChange(pc)
         dc.onmessage = (ev) => self.onMessage(ev.data);
+        dc.onopen = (ev) => {
+            if (self._onConnected_cb) {
+                self._onConnected_cb();
+            }
+            self._onConnected_cb = null;
+        };
+        dc.onerror = (ev) => console.log(`dc.onerror() ${ev}`);
 
         await pc.setLocalDescription(await pc.createOffer());
         return new Promise((resolve, reject) => {
@@ -101,39 +103,51 @@ class RTC {
         });
     }
 
-    async handleInput(input) {
-        // if got message and state is new, means message is offer from other node
+    async handleInput(input: string) {
         if (!this.pc) {
-            return await this.createOffer();
+            this._wip_msg = input;
+            return await this.connectAndcreateOffer();
         } else if (this.pc.connectionState != "connected") {
-            if (this.pc.signalingState == "stable") {
-                let offer = JSON.parse(input);
+            // this is js code for handling case where offer first arrives from elsewhere
+            // if (this.pc.signalingState == "stable") {
+            //     let offer = JSON.parse(input);
 
-                console.log(`[pc.connectionState == "new"] prior to setRemoteDescription() signalingState: ${this.pc.signalingState}`);
-                await this.pc.setRemoteDescription(offer);
-                console.log(`[pc.connectionState == "new"] prior to setLocalDescription() signalingState: ${this.pc.signalingState}`);
-                await this.pc.setLocalDescription(await this.pc.createAnswer());
-                console.log(`setLocalDescription`);
-                const ret = new Promise((resolve, reject) => {
-                    this.pc.onicecandidate = ({ candidate }) => {
-                        console.log(`[pc.connectionState == "new"] onicecandidate() signalingState: ${this.pc.signalingState} candidate: ${candidate}`);
-                        if (candidate) return;
-                        const answer = JSON.stringify(this.pc.localDescription);
-                        resolve(answer);
-                    };
-                });
-                return await ret;
-            } else if (this.pc.signalingState == "have-local-offer") {
+            //     console.log(`[pc.connectionState == "new"] prior to setRemoteDescription() signalingState: ${this.pc.signalingState}`);
+            //     await this.pc.setRemoteDescription(offer);
+            //     console.log(`[pc.connectionState == "new"] prior to setLocalDescription() signalingState: ${this.pc.signalingState}`);
+            //     await this.pc.setLocalDescription(await this.pc.createAnswer());
+            //     console.log(`setLocalDescription`);
+            //     const ret = new Promise((resolve, reject) => {
+            //         this.pc.onicecandidate = ({ candidate }) => {
+            //             console.log(`[pc.connectionState == "new"] onicecandidate() signalingState: ${this.pc.signalingState} candidate: ${candidate}`);
+            //             if (candidate) return;
+            //             const answer = JSON.stringify(this.pc.localDescription);
+            //             resolve(answer);
+            //         };
+            //     });
+            //     return await ret;
+            // }
+
+            // here expecting input to be JSON offer reply from other node
+            // receive counter offer, and try to connect
+            // if (this.pc.signalingState == "have-local-offer")
+            {
                 const answer = JSON.parse(input);
                 console.log(`[pc.connectionState == "connecting"] prior to setRemoteDescription() signalingState: ${this.pc.signalingState}`);
-                // pc.setRemoteDescription(answer);
+                let self = this;
                 const ret = new Promise((resolve, reject) => {
-                    this._onConnected_cb = () => resolve("connected");
+                    this._onConnected_cb = () => {
+                        if (self._wip_msg) {
+                            self.handleInput(self._wip_msg).then(resolve);
+                            self._wip_msg = null;
+                        } else {
+                            resolve("connected");
+                        }
+                    }
                     this.pc.setRemoteDescription(new RTCSessionDescription(answer));
                 })
                 return await ret;
             }
-            throw new Error(`[handleInput()] unexpected signalingState: ${this.pc.signalingState}`);
         }
         // if we got here we are connected
         // send message
