@@ -22,36 +22,29 @@ const PION_MAX_MSG_SIZE = 65535
 
 func runCommandWithTimeout(shell []string, cmd string, timeout time.Duration) string {
 	resultChan := make(chan CommandResult)
-	errorChan := make(chan error)
-	// Run the command in a goroutine so we can kill it if it times out
+
 	go func() {
 		var command *exec.Cmd
 
-		shell_and_cmd := make([]string, len(shell))
-		// Copy the elements from the slice to the array
-		copy(shell_and_cmd, shell)
-		shell_and_cmd = append(shell_and_cmd, cmd)
-
+		shell_and_cmd := append(shell, cmd)
 		command = exec.Command(shell_and_cmd[0], shell_and_cmd[1:]...)
 
 		output, err := command.CombinedOutput()
-		if err != nil {
-			errorChan <- err
-			return
+
+		result := CommandResult{
+			Output: string(output),
+			Error:  "",
 		}
 
-		resultChan <- CommandResult{Output: string(output)}
+		if err != nil {
+			result.Error = err.Error()
+		}
+
+		resultChan <- result
 	}()
 
 	select {
 	case result := <-resultChan:
-		jsonResult, err := json.Marshal(result)
-		if err != nil {
-			panic(err)
-		}
-		return string(jsonResult)
-	case err := <-errorChan:
-		result := CommandResult{Error: err.Error()}
 		jsonResult, err := json.Marshal(result)
 		if err != nil {
 			panic(err)
@@ -130,7 +123,7 @@ func main() {
 		msgStr := string(msg.Data)
 		msgJSON, _ := json.Marshal(msgStr)
 		fmt.Println("OnMessage", string(msgJSON))
-		ret := runCommandWithTimeout(default_shell, string(msg.Data), 1*time.Second)
+		ret := runCommandWithTimeout(default_shell, string(msg.Data), 90*time.Second)
 		// split ret into chunks of PION_MAX_MSG_SIZE
 		// and send each chunk
 		for i := 0; i < len(ret); i += PION_MAX_MSG_SIZE {
